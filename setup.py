@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name="hmm-lib-SJ",
-    version="0.0.1",
+    version="1.0.0",
     packages=find_packages(exclude=['tests*']),
     license="MIT",
     description="HMM python library",
@@ -16,7 +16,6 @@ setup(
                  "Operation System :: OS Independent",
                  ],
     python_requires='>=3.6',
-    # test_suite="tests",
     url="https://github.com/SungjaeJung1031/hmm-lib",
     author="Sungjae Jung",
     author_email="sungjae.jung1031@gmail.com",

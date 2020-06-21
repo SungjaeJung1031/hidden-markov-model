@@ -1,8 +1,7 @@
-"""[summary]
-
-    Returns:
-        [type]: [description]
+""" Hidden Markov Model
     """
+import math
+from .extmath import ExtMath
 
 
 class Hmm:
@@ -14,12 +13,13 @@ class Hmm:
         self.possible_observations = None
         self.observations = None
         self.smoothing_factor = float(0.0)
-        self.init_prob = {}
-        self.trans_prob = {}
-        self.ems_prob = {}
-        self.alpha_prob = {}
-        self.beta_prob = {}
-        self.gamma_prob = {}
+        self.p_init = {}
+        self.p_trans = {}
+        self.p_ems = {}
+        self.lnp_alpha = {}
+        self.lnp_beta = {}
+        self.lnp_gamma = {}
+        self.lnp_xi = {}
 
     def __repr__(self):
         """Returns the overview of the HMM
@@ -59,7 +59,7 @@ class Hmm:
         model_overview += "---------------- Initial Probability ---------------\n"
         model_overview += "----------------------------------------------------\n"
         if len(self.states) > 0:
-            for i, (init_prob_k, init_prob_v) in enumerate(self.init_prob.items()):
+            for i, (init_prob_k, init_prob_v) in enumerate(self.p_init.items()):
                 model_overview += "s[{}]: {}\n".format(init_prob_k,
                                                        init_prob_v)
         else:
@@ -69,7 +69,7 @@ class Hmm:
         model_overview += "-------------- Transition Probability --------------\n"
         model_overview += "----------------------------------------------------\n"
         if len(self.states) > 0:
-            for i, (trans_prob_k, trans_prob_v) in enumerate(self.trans_prob.items()):
+            for i, (trans_prob_k, trans_prob_v) in enumerate(self.p_trans.items()):
                 for j, (trans_prob_i_k, trans_prob_i_v) in enumerate(trans_prob_v.items()):
                     model_overview += "(s[{}]->s[{}]: {})  ".format(
                         trans_prob_k, trans_prob_i_k, trans_prob_i_v)
@@ -81,7 +81,7 @@ class Hmm:
         model_overview += "--------------- Emission Probability ---------------\n"
         model_overview += "----------------------------------------------------\n"
         if len(self.states) > 0 and len(self.possible_observations) > 0:
-            for i, (ems_prob_k, ems_prob_v) in enumerate(self.ems_prob.items()):
+            for i, (ems_prob_k, ems_prob_v) in enumerate(self.p_ems.items()):
                 for j, (ems_prob_i_k, ems_prob_i_v) in enumerate(ems_prob_v.items()):
                     model_overview += "(s[{}]->o[{}]: {})  ".format(
                         ems_prob_k, ems_prob_i_k, ems_prob_i_v)
@@ -105,142 +105,122 @@ class Hmm:
         self.possible_observations = possible_observations
         self.observations = observations
         self.smoothing_factor = float(smoothing_factor)
-        self.init_prob = {state: 0.0 for state in self.states}
-        self.trans_prob = {
+        self.p_init = {state: 0.0 for state in self.states}
+        self.p_trans = {
             state_i: {state_j: 0.0 for state_j in self.states} for state_i in self.states}
-        self.ems_prob = {
+        self.p_ems = {
             state: {possible_observation: 0.0 for possible_observation in self.possible_observations} for state in self.states}
-        self.alpha_prob = {
-            i: {state: 0.0 for state in self.states} for i in len(self.observations)}
-        self.beta_prob = {
-            i: {state: 0.0 for state in self.states} for i in len(self.observations)}
-        self.gamma_prob = {
-            i: {state: 0.0 for state in self.states} for i in len(self.observations)}
+        self.lnp_alpha = {
+            obs: {state: 0.0 for state in self.states} for obs in range(len(self.observations))}
+        self.lnp_beta = {
+            obs: {state: 0.0 for state in self.states} for obs in range(len(self.observations))}
+        self.lnp_gamma = {
+            idx_obs: {state: 0.0 for state in self.states} for idx_obs in range(len(self.observations))}
+        self.lnp_xi = {
+            idx_obs: {state_i: {state_j: 0.0 for state_j in self.states} for state_i in self.states} for idx_obs in range(len(self.observations))
+        }
 
-    def forward_backward_algorithm(self):
-        """forward-backward algorithm
+    def baum_welch(self):
+        """Baum-Welch algorithm
         """
-        self.forward_algorithm()
+        for idx_obs in range(len(self.observations)):
+            if idx_obs == (len(self.observations) - 2):
+                break
+            normalizer = math.nan
+            for state_i in self.states:
+                for state_j in self.states:
+                    idx_next_obs = idx_obs+1
+                    first_factor = ExtMath.eln(self.p_trans[state_i][state_j])
 
-        # TODO: calculate sum of alpha prob
+                    second_factor = ExtMath.eln_product(
+                        self.p_ems[state_j][self.observations[idx_next_obs]],
+                        self.lnp_beta[idx_next_obs][state_j])
 
-        self.backward_algorithm()
+                    self.lnp_xi[idx_obs][state_i][state_j] = ExtMath.eln_product(
+                        self.lnp_alpha[idx_obs][state_i], ExtMath.eln_product(first_factor, second_factor))
 
-        # TODO: calculate sum of beta prob
+                    normalizer = ExtMath.eln_sum(
+                        normalizer, self.lnp_xi[idx_obs][state_i][state_j])
 
-        # TODO: calculate gamma (posterior) prob
+            for state_i in self.states:
+                for state_j in self.states:
+                    self.lnp_xi[idx_obs][state_i][state_j] = ExtMath.eln_product(
+                        self.lnp_xi[idx_obs][state_i][state_j], -normalizer)
 
-    def forward_algorithm(self):
-        """forawrd algorithm
+    def fwd_bkw(self):
+        """numerically stable forward-backward algorithm
+        """
+        for idx_obs in range(len(self.observations)):
+            normalizer = math.nan
+            for state in self.states:
+                self.lnp_gamma[idx_obs][state] = ExtMath.eln_product(
+                    self.lnp_alpha[idx_obs][state], self.lnp_beta[idx_obs][state])
+                normalizer = ExtMath.eln_sum(
+                    normalizer, self.lnp_gamma[idx_obs][state])
+
+            for state in self.states:
+                self.lnp_gamma[idx_obs][state] = ExtMath.eln_product(
+                    self.lnp_gamma[idx_obs][state], -normalizer)
+
+    def fwd(self):
+        """numerically stable forward algorithm
         """
         for idx_obs, obs_i in enumerate(self.observations):
-            prev_event_prob = 0.0
-            for state_i in self.states:
+            ln_normalizer = math.nan
+            for state_j in self.states:
+                log_alpha = math.nan
                 if idx_obs == 0:
-                    prev_event_prob = self.init_prob[state_i]
+                    log_alpha = ExtMath.eln(self.p_init[state_j])
                 else:
-                    idx_prev_obs = idx_obs-1
-                    prev_event_prob = sum(
-                        self.alpha_prob[idx_prev_obs][state_j]
-                        * self.trans_prob[state_j][state_i]
-                        for state_j in self.states)
+                    idx_prev_obs = idx_obs - 1
+                    for state_i in self.states:
+                        first_factor = self.lnp_alpha[idx_prev_obs][state_i]
+                        second_factor = ExtMath.eln(
+                            self.p_trans[state_i][state_j])
+                        log_alpha = ExtMath.eln_sum(
+                            log_alpha, ExtMath.eln_product(first_factor, second_factor))
 
-                self.alpha_prob[idx_obs][state_i] = prev_event_prob\
-                    * self.ems_prob[state_i][obs_i]
+                self.lnp_alpha[idx_obs][state_j] = ExtMath.eln_product(
+                    log_alpha, ExtMath.eln(self.p_ems[state_j][obs_i]))
 
-    def backward_algorithm(self):
-        """backward algorithm
+                # update normalizer
+                ln_normalizer = ExtMath.eln_sum(
+                    ln_normalizer, self.lnp_alpha[idx_obs][state_j])
+
+            # normalization
+            for state_j in self.states:
+                self.lnp_alpha[idx_obs][state_j] = ExtMath.eln_product(
+                    self.lnp_alpha[idx_obs][state_j], -ln_normalizer)
+
+    def bkw(self):
+        """numerically stable backward algorithm
         """
         for idx_obs in reversed(range(len(self.observations))):
-            cur_beta_prob = 0.0
+            ln_normalizer = math.nan
             for state_i in self.states:
-                if idx_obs == (len(self.observations)-1):
-                    cur_beta_prob = self.trans_prob[state_i]["E"]
-                else:
-                    idx_next_obs = idx_obs+1
-                    cur_beta_prob = sum(
-                        self.beta_prob[idx_next_obs][state_j]
-                        * self.trans_prob[state_i][state_j]
-                        * self.ems_prob[state_j][self.observations[idx_next_obs]]
-                        for state_j in self.states
-                    )
+                ln_beta = math.nan
+                for state_j in self.states:
+                    lnp_ems = ExtMath.eln(
+                        self.p_ems[state_j][self.observations[idx_obs]])
+                    lnp_next_beta = 0.0
+                    if idx_obs != len(self.observations)-1:
+                        idx_next_obs = idx_obs + 1
+                        lnp_next_beta = self.lnp_beta[idx_next_obs][state_j]
 
-                self.beta_prob[idx_obs][state_i] = cur_beta_prob
+                    ln_beta = ExtMath.eln_sum(ln_beta,
+                                              ExtMath.eln_product(ExtMath.eln(self.p_trans[state_i][state_j]),
+                                                                  ExtMath.eln_product(lnp_ems, lnp_next_beta)))
 
-        # def forward_algorithm_old(self, l_obs):
-        #     """forward algorithm
+                self.lnp_beta[idx_obs][state_i] = ln_beta
 
-        #     Args:
-        #         l_obs (list): list of observation
-        #     """
-        #     fd_norm_factor = {}
+                # update normalizer
+                ln_normalizer = ExtMath.eln_sum(
+                    ln_normalizer, self.lnp_beta[idx_obs][state_i])
 
-        #     # step #2
-        #     for idx_seq in range(1, self.sz_sequence):
-        #         fd_norm_factor[idx_seq] = 0.0
-        #         for idx_hidden_i in range(self.sz_hidden):
-        #             self.alpha_prob[idx_seq][idx_hidden] = 0.0
-
-        #             for idx_hidden_j in range(self.sz_hidden):
-        #                 self.alpha_prob[idx_seq][idx_hidden] \
-        #                     += self.alpha_prob[idx_seq-1][idx_hidden_j] \
-        #                     * self.trans_prob[idx_hidden_j][idx_hidden_i]
-
-        #             self.alpha_prob \
-        #                 *= self.ems_prob[l_obs[idx_seq]][idx_hidden]
-
-        #         fd_norm_factor[idx_seq] = 1.0/fd_nidx_obsorm_factor[idx_seq]
-
-        #         for idx_hidden in range(self.sz_hidden):
-        #             self.alpha_prob[idx_seq][idx_hidden] *= fd_norm_factor[idx_seq]
-
-        # def forward_algorithm_old_init(self, l_obs):
-        #     """forward algorithm with initiali probability
-
-        #     Args:
-        #         i_obs (int): observation
-        #     """
-        #     norm_factor = 0.0  # normalization factor
-
-        #     for idx_hidden in range(self.sz_hidden):
-        #         self.alpha_prob[0][idx_hidden]\
-        #             = self.init_prob[idx_hidden] \
-        #             * self.ems_prob[l_obs[0]][idx_hidden]
-
-        #         # update normalization factor
-        #         norm_factor += self.alpha_prob[0][idx_hidden]
-
-        #     # normalization
-        #     norm_factor = 1.0/norm_factor
-        #     for idx_hidden in range(self.sz_hidden):
-        #         self.alpha_prob[0][idx_hidden] *= norm_factor
-
-        # def forward_algorithm_old(self, l_obs):
-        #     """forward algorithm
-
-        #     Args:
-        #         l_obs (list): list of observation
-        #     """
-        #     fd_norm_factor = {}
-
-        #     # step #2
-        #     for idx_seq in range(1, self.sz_sequence):
-        #         fd_norm_factor[idx_seq] = 0.0
-        #         for idx_hidden_i in range(self.sz_hidden):
-        #             self.alpha_prob[idx_seq][idx_hidden] = 0.0
-
-        #             for idx_hidden_j in range(self.sz_hidden):
-        #                 self.alpha_prob[idx_seq][idx_hidden] \
-        #                     += self.alpha_prob[idx_seq-1][idx_hidden_j] \
-        #                     * self.trans_prob[idx_hidden_j][idx_hidden_i]
-
-        #             self.alpha_prob \
-        #                 *= self.ems_prob[l_obs[idx_seq]][idx_hidden]
-
-        #         fd_norm_factor[idx_seq] = 1.0/fd_norm_factor[idx_seq]
-
-        #         for idx_hidden in range(self.sz_hidden):
-        #             self.alpha_prob[idx_seq][idx_hidden] *= fd_norm_factor[idx_seq]
+            # normalization
+            for state_i in self.states:
+                self.lnp_beta[idx_obs][state_i] = ExtMath.eln_product(
+                    self.lnp_beta[idx_obs][state_i], -ln_normalizer)
 
     def set_init_prob(self, key, val):
         """set initial probability
@@ -249,7 +229,7 @@ class Hmm:
             key (Any): key (index of a hidden state) of the dictionary for the initial probabiliy
             val (float): value (initial probability of a hidden state) of the dictionary for the initial probability
         """
-        self.init_prob[key] = val
+        self.p_init[key] = val
 
     def set_trs_prob(self, key, val):
         """set transition probability
@@ -260,7 +240,7 @@ class Hmm:
                            key[1] is for the index of the next hidden state
             val (float): value (transition probability) of the dictionary for the initial probability
         """
-        self.trans_prob[key[0]][key[1]] = val
+        self.p_trans[key[0]][key[1]] = val
 
     def set_ems_prob(self, key, val):
         """set emission probability
@@ -271,17 +251,9 @@ class Hmm:
                            key[1] is for the index of a hidden state
             val ([type]): value (emission probability) of the dictionary for the transition probability
         """
-        self.ems_prob[key[0]][key[1]] = val
-
-    def bacward_algorithm(self):
-        """backward algems_proborithm
-        """
-        pass
+        self.p_ems[key[0]][key[1]] = val
 
     def update_parameters(self):
         """update parameter
         """
-        # for i in range(self.sz_hidden):
-        #     for j in range(self.sz_hidden):
-        #         self.init_prob = (self.smoothing_factor + )
         pass

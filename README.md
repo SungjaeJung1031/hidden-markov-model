@@ -23,11 +23,27 @@ This library is licensed under the [MIT License](https://opensource.org/licenses
 
 ## Changes
 
-- 1.1.0:
+- 1.0.1:
   - tbd.
+- 1.0.0:
+  - Below algorithms are updated for the numerical stability
+    - forward algorithm
+    - backward algorithm
+    - forward-backward algorithm
+    - Baum-Welch algorithm
+  - test file is added for the below algorithms
+    - forward algorithm
+    - backward algorithm
 - 0.0.1
-  - tbd.
+  - Below algorithms are added
+    - forward algorithm
+    - backward algorithm
 
 ## Contribute
 
 Contribute are alway welcome.
+
+## References
+
+- [L. R. Rabiner, "A tutorial on hidden Markov models and selected applications in speech recognition," in Proceedings of the IEEE, vol. 77, no. 2, pp. 257-286, Feb. 1989, doi: 10.1109/5.18626.](https://ieeexplore.ieee.org/document/18626/citations#citations)
+- [Tobias P. Mann,"Numerically stable hidden Markov model implementation", Feb, 2006](https://www.semanticscholar.org/paper/Numerically-Stable-Hidden-Markov-Model-Mann/109bb95ffec81185f2c69f654711b25b8348adb0#related-papers)
